@@ -1,0 +1,133 @@
+import os
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
+)
+from downloader import download_video, is_youtube_url
+from config import BOT_TOKEN, DOWNLOAD_DIR
+
+logging.basicConfig(level=logging.INFO)
+
+# ── /start ────────────────────────────────────────────────────
+async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🎬 *YouTube Downloader Bot*\n\n"
+        "Just send me a YouTube link (video or Short) and I'll ask you the quality.\n\n"
+        "Commands:\n"
+        "/start — show this message\n"
+        "/help  — usage tips",
+        parse_mode="Markdown"
+    )
+
+# ── /help ─────────────────────────────────────────────────────
+async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📖 *How to use:*\n\n"
+        "1. Paste any YouTube or YouTube Shorts URL\n"
+        "2. Choose your download quality\n"
+        "3. Wait for the file ✅\n\n"
+        "⚠️ Files over 50 MB can't be sent via Telegram bots.",
+        parse_mode="Markdown"
+    )
+
+# ── Receives a URL ────────────────────────────────────────────
+async def handle_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+
+    if not is_youtube_url(url):
+        await update.message.reply_text("❌ Please send a valid YouTube or Shorts URL.")
+        return
+
+    # Store URL in user context
+    ctx.user_data["url"] = url
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🎥 Best Quality", callback_data="best"),
+            InlineKeyboardButton("📺 720p", callback_data="720p"),
+        ],
+        [
+            InlineKeyboardButton("📱 480p", callback_data="480p"),
+            InlineKeyboardButton("🎵 Audio Only (MP3)", callback_data="audio"),
+        ],
+    ]
+
+    await update.message.reply_text(
+        "Choose download quality:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# ── Handles quality button press ──────────────────────────────
+async def handle_quality(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    quality = query.data
+    url = ctx.user_data.get("url")
+
+    if not url:
+        await query.edit_message_text("❌ Session expired. Please send the URL again.")
+        return
+
+    await query.edit_message_text(f"⏳ Downloading ({quality})... please wait.")
+
+    try:
+        result = download_video(url, quality)
+        filepath = result["filepath"]
+        title = result["title"]
+        is_short = result["is_short"]
+
+        label = "🩳 YouTube Short" if is_short else "🎬 YouTube Video"
+        caption = (
+            f"{label}\n"
+            f"📌 *{title}*\n"
+            f"👤 {result['uploader']}\n"
+            f"⏱ {result['duration']}s"
+        )
+
+        with open(filepath, "rb") as f:
+            if quality == "audio":
+                await query.message.reply_audio(
+                    audio=f,
+                    caption=caption,
+                    parse_mode="Markdown",
+                    read_timeout=120,
+                    write_timeout=120,
+                    connect_timeout=30,
+                )
+            else:
+                await query.message.reply_video(
+                    video=f,
+                    caption=caption,
+                    parse_mode="Markdown",
+                    supports_streaming=True,
+                    read_timeout=120,
+                    write_timeout=120,
+                    connect_timeout=30,
+                )
+
+        os.remove(filepath)  # Clean up after sending
+
+    except Exception as e:
+        err = str(e)
+        if "File is too large" in err or "max_filesize" in err.lower():
+            await query.message.reply_text("❌ File exceeds 50 MB — Telegram's bot limit. Try 480p or audio.")
+        else:
+            await query.message.reply_text(f"❌ Download failed:\n`{err}`", parse_mode="Markdown")
+
+# ── Main ──────────────────────────────────────────────────────
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
+    app.add_handler(CallbackQueryHandler(handle_quality))
+
+    print("Bot is running...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
