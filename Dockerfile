@@ -13,5 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy all project files
 COPY . .
 
+# Graceful stop (SIGINT) so polling can shut down cleanly
+STOPSIGNAL SIGINT
+
 # Run the bot
 CMD ["python", "bot.py"]

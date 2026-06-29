@@ -5,6 +5,8 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
 )
+from telegram.request import HTTPXRequest
+from telegram.error import Conflict, TimedOut
 from downloader import download_video, is_youtube_url
 from config import BOT_TOKEN, DOWNLOAD_DIR, BOT_PASSWORD
 
@@ -148,18 +150,47 @@ async def handle_quality(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             await query.message.reply_text(f"❌ Download failed:\n`{err}`", parse_mode="Markdown")
 
+# ── Errors ────────────────────────────────────────────────────
+async def on_error(update: object, ctx: ContextTypes.DEFAULT_TYPE):
+    err = ctx.error
+    if isinstance(err, Conflict):
+        logging.error(
+            "409 Conflict: another bot instance is polling with this token. "
+            "Stop the duplicate (local terminal, old Docker container, or server)."
+        )
+    elif isinstance(err, TimedOut):
+        logging.warning("Telegram request timed out — will retry.")
+    else:
+        logging.exception("Unhandled error", exc_info=err)
+
 # ── Main ──────────────────────────────────────────────────────
 def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+    # read_timeout must exceed Telegram long-poll hold time (see run_polling timeout).
+    poll_timeout = 20
+    polling_request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=poll_timeout + 15.0,
+        write_timeout=30.0,
+    )
+    media_request = HTTPXRequest(connect_timeout=30.0, read_timeout=120.0, write_timeout=120.0)
+
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .request(media_request)
+        .get_updates_request(polling_request)
+        .build()
+    )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     app.add_handler(CallbackQueryHandler(handle_quality))
+    app.add_error_handler(on_error)
 
     print("Bot is running...")
-    app.run_polling()
+    app.run_polling(timeout=poll_timeout, bootstrap_retries=-1)
 
 if __name__ == "__main__":
     main()
