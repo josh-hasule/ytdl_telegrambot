@@ -6,9 +6,14 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 from downloader import download_video, is_youtube_url
-from config import BOT_TOKEN, DOWNLOAD_DIR
+from config import BOT_TOKEN, DOWNLOAD_DIR, BOT_PASSWORD
 
 logging.basicConfig(level=logging.INFO)
+
+
+def is_authenticated(ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    return ctx.user_data.get("authenticated") is True
+
 
 # ── /start ────────────────────────────────────────────────────
 async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -17,9 +22,28 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Just send me a YouTube link (video or Short) and I'll ask you the quality.\n\n"
         "Commands:\n"
         "/start — show this message\n"
-        "/help  — usage tips",
+        "/help  — usage tips\n"
+        "/login — unlock downloads (once per session)",
         parse_mode="Markdown"
     )
+
+
+# ── /login ────────────────────────────────────────────────────
+async def login(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    args = ctx.args
+    if not args:
+        await update.message.reply_text(
+            "🔐 Send your password:\n`/login your_password`",
+            parse_mode="Markdown",
+        )
+        return
+
+    if args[0] == BOT_PASSWORD:
+        ctx.user_data["authenticated"] = True
+        await update.message.reply_text("✅ Logged in. You can send YouTube links now.")
+    else:
+        await update.message.reply_text("❌ Wrong password.")
+
 
 # ── /help ─────────────────────────────────────────────────────
 async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -34,6 +58,13 @@ async def help_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Receives a URL ────────────────────────────────────────────
 async def handle_url(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not is_authenticated(ctx):
+        await update.message.reply_text(
+            "🔐 Please log in first:\n`/login your_password`",
+            parse_mode="Markdown",
+        )
+        return
+
     url = update.message.text.strip()
 
     if not is_youtube_url(url):
@@ -122,6 +153,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_url))
     app.add_handler(CallbackQueryHandler(handle_quality))
