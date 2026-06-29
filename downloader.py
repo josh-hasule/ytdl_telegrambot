@@ -1,14 +1,50 @@
 import yt_dlp
 import os
+import time
+import logging
 from config import DOWNLOAD_DIR, MAX_FILE_SIZE_MB
 
-COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+COOKIES_FILE = os.path.join(BASE_DIR, "cookies.txt")
+
 
 def is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
+
 def download_video(url: str, quality: str = "best") -> dict:
+    """
+    Downloads a YouTube video or Short with automatic retry on bot detection.
+    quality: "best", "720p", "480p", "audio"
+    Returns dict with file path and metadata.
+    """
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            return _do_download(url, quality)
+        except Exception as e:
+            last_error = e
+            if "Sign in to confirm" in str(e):
+                wait = 5 * (attempt + 1)  # 5s, 10s, 15s
+                logging.warning(
+                    f"Bot detection hit, retrying in {wait}s "
+                    f"(attempt {attempt + 1}/3)..."
+                )
+                time.sleep(wait)
+            else:
+                raise  # non-bot errors fail immediately
+
+    raise last_error
+
+
+def _do_download(url: str, quality: str) -> dict:
+    # Debug: confirm cookie file exists
+    if os.path.exists(COOKIES_FILE):
+        logging.info(f"✅ Cookie file found: {COOKIES_FILE} ({os.path.getsize(COOKIES_FILE)} bytes)")
+    else:
+        logging.error(f"❌ Cookie file NOT found at: {COOKIES_FILE}")
 
     format_map = {
         "best":  "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/mp4/best",
@@ -24,8 +60,18 @@ def download_video(url: str, quality: str = "best") -> dict:
         "quiet": True,
         "no_warnings": True,
         "max_filesize": MAX_FILE_SIZE_MB * 1024 * 1024,
-        # ── Cookie auth ──────────────────────────────────────
         "cookiefile": COOKIES_FILE,
+        "format_sort": ["res", "ext:mp4:m4a"],
+        "sleep_interval": 3,
+        "max_sleep_interval": 6,
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
     }
 
     if quality == "audio":
@@ -39,6 +85,7 @@ def download_video(url: str, quality: str = "best") -> dict:
         info = ydl.extract_info(url, download=True)
         filepath = ydl.prepare_filename(info)
 
+        # Handle audio extension swap
         if quality == "audio":
             filepath = filepath.rsplit(".", 1)[0] + ".mp3"
 
