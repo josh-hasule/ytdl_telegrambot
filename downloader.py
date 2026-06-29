@@ -2,15 +2,12 @@ import yt_dlp
 import os
 from config import DOWNLOAD_DIR, MAX_FILE_SIZE_MB
 
+COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
+
 def is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
 
 def download_video(url: str, quality: str = "best") -> dict:
-    """
-    Downloads a YouTube video or Short.
-    quality: "best", "720p", "480p", "audio"
-    Returns dict with file path and metadata.
-    """
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     format_map = {
@@ -21,27 +18,27 @@ def download_video(url: str, quality: str = "best") -> dict:
     }
 
     ydl_opts = {
-        # "format": format_map.get(quality, format_map["best"]),
-         "format": "best[ext=mp4]/best",
+        "format": format_map.get(quality, format_map["best"]),
         "outtmpl": f"{DOWNLOAD_DIR}/%(title)s.%(ext)s",
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
         "max_filesize": MAX_FILE_SIZE_MB * 1024 * 1024,
+        # ── Cookie auth ──────────────────────────────────────
+        "cookiefile": COOKIES_FILE,
     }
 
     if quality == "audio":
+        ydl_opts["format"] = format_map["audio"]
         ydl_opts["postprocessors"] = [{
             "key": "FFmpegExtractAudio",
             "preferredcodec": "mp3",
         }]
-        ydl_opts["outtmpl"] = f"{DOWNLOAD_DIR}/%(title)s.%(ext)s"
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filepath = ydl.prepare_filename(info)
 
-        # Handle audio extension swap
         if quality == "audio":
             filepath = filepath.rsplit(".", 1)[0] + ".mp3"
 
