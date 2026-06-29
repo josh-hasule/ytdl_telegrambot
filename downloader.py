@@ -2,7 +2,7 @@ import yt_dlp
 import os
 from config import DOWNLOAD_DIR, MAX_FILE_SIZE_MB
 
-COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.json")
+COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
 
 def is_youtube_url(url: str) -> bool:
     return "youtube.com" in url or "youtu.be" in url
