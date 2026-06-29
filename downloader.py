@@ -11,10 +11,10 @@ def download_video(url: str, quality: str = "best") -> dict:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     format_map = {
-        "best":  "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-        "720p":  "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]",
-        "480p":  "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]",
-        "audio": "bestaudio[ext=m4a]/bestaudio",
+        "best":  "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/mp4/best",
+        "720p":  "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]/mp4",
+        "480p":  "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best[height<=480]/mp4",
+        "audio": "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio",
     }
 
     ydl_opts = {
