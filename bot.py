@@ -136,12 +136,25 @@ async def handle_quality(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     caption=caption,
                     parse_mode="Markdown",
                     supports_streaming=True,
+                    width=result.get("width"),
+                    height=result.get("height"),
+                    duration=result.get("duration"),
                     read_timeout=120,
                     write_timeout=120,
                     connect_timeout=30,
                 )
 
-        os.remove(filepath)  # Clean up after sending
+        os.remove(filepath)
+
+        # Send description + tags as a separate message (captions cap at 1024 chars,
+        # messages cap at 4096, so we chunk if needed).
+        tags = result.get("tags") or []
+        description = result.get("description") or "No description available."
+        tags_line = f"\n\n🏷 *Tags:* {', '.join(tags[:30])}" if tags else ""
+        info_text = f"📝 *Description:*\n{description}{tags_line}"
+
+        for i in range(0, len(info_text), 4000):
+            await query.message.reply_text(info_text[i:i + 4000], parse_mode="Markdown")
 
     except Exception as e:
         err = str(e)
